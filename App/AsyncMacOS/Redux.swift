@@ -7,7 +7,7 @@
 
 import AsyncStore
 
-typealias ContentStore = Store<Content.State, Content.Action, Void>
+typealias ContentStore = Store<Content.State, Content.Action>
 
 extension ContentStore {
 	static let shared = ContentStore.init(
@@ -26,7 +26,7 @@ extension ContentStore {
 //}
 
 enum Content {
-	static func reducer(state: inout State, action: Action, env: Void) -> [Task<Action, Never>] {
+	static let reducer = Reducer<State, Action, Void> { state, action, environment in
 		switch action {
 		case .inc:
 			state.count += 1
