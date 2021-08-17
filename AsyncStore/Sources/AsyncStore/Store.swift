@@ -11,13 +11,43 @@ import Combine
 #if compiler(>=5.5)
 @available(macOS 12, *)
 public actor Store<State: Equatable, Action, Environment> {
-	public private(set) var state: CurrentValueSubject<State, Never>
+	public private(set) var state: CurrentValueSubject<State, Never> { didSet { updateCallbacks() } }
+	internal var stateCallbacks: [Int: (State) -> ()] = [:]
 	private let environment: Environment
 	private let reducer: (inout State, Action, Environment) -> [Task<Action, Never>]
-	private var flights: [Int: Task<Void, Never>] = [:] {
-		didSet {
-			print("flights: \(flights.count)")
+	internal var flights: [Int: Task<Void, Error>] = [:]
+//	{
+//		didSet {
+//			print("flights: \(flights.count)")
+//		}
+//	}
+	
+	internal enum CancellationError: Error { case cancelled }
+	
+	internal func updateCallbacks() {
+		for callback in stateCallbacks {
+			callback.value(state.value)
 		}
+	}
+	
+	internal nonisolated func setCallback(key: Int, value: @escaping (State) -> ()) {
+		Task.detached {
+			await self._setCallback(key: key, value: value)
+		}
+	}
+	
+	internal func _setCallback(key: Int, value: @escaping (State) -> ()) {
+		stateCallbacks[key] = value
+	}
+	
+	internal nonisolated func removeCallback(key: Int) {
+		Task.detached {
+			await self._removeCallback(key: key)
+		}
+	}
+	
+	internal func _removeCallback(key: Int) {
+		stateCallbacks.removeValue(forKey: key)
 	}
 	
 	public init(
@@ -34,80 +64,67 @@ public actor Store<State: Equatable, Action, Environment> {
 		return reducer(&state.value, action, environment)
 	}
 	
-//	func ssend(_ action: Action) {
-//		reducer(&state.value, action, environment).forEach({
-//			flights.insert($0)
-//		})
-//	}
-	
-	nonisolated public func send(_ action: Action) {
-//		withTaskCancellationHandler {
-//
-//		} operation: {
-//
-//		}
-		
-		var hash: Int!
-		let task = Task.detached { [self, hash] in
+	public nonisolated func send(_ action: Action) {
+		Task.detached { [self] in
 			for effect in await self._send(action) {
-				
-//				await withTaskCancellationHandler {
-					await addTask(hash: effect.hashValue) {
-						let action = await effect.value
-						send(action)
-						return action
-					}
-//				} onCancel: {
-//					print("onCancel")
-//					_cancel(by: hash!)
-//				}
+				await addTask(hash: effect.hashValue) {
+					try Task.checkCancellation()
+					let action = await effect.value
+					try Task.checkCancellation()
+					send(action)
+					return action
+				}
 			}
 		}
-		hash = task.hashValue
 	}
 	
-	func addTask(hash: Int, _ task: @escaping () async -> (Action)) {
+	private func addTask(hash: Int, _ task: @escaping () async throws -> (Action)) {
 		flights[hash] = Task.detached(priority: nil, operation: {
-			
-			await withTaskCancellationHandler {
-				
-			} onCancel: {
-				print("onCancel")
-			}
-
-//			do {
-				await task()
-//			} catch {
-//
-//			}
+			_ = try await task()
+			await self._removeFlight(hash)
 		})
 	}
 	
-	nonisolated func _cancel(by hash: Int) {
-		Task.detached {
-			await self.cancel(by: hash)
+	private func _removeFlight(_ hash: Int) {
+		flights.removeValue(forKey: hash)
+	}
+	
+	internal func _cancel(by hashValue: Int) {
+		flights
+			.filter({ $0.key == hashValue })
+			.forEach {
+				$0.value.cancel()
+				flights.removeValue(forKey: $0.key)
 		}
 	}
 	
-	public func cancel(by hash: Int) {
-		flights.forEach { $0.value.cancel() }
-//		print("cancel. \(hash)")
-////		print(flights.map { $0.hashValue })
-//		flights.filter { $0.key == hash }.forEach { $0.value.cancel(); print("cancelling..") }
-//		flights = flights.filter { $0.key != hash }
+	public nonisolated func cancel(by anyHashable: AnyHashable) {
+		if let int = cancellationDictionary[anyHashable] {
+			Task.detached {
+				await self._cancel(by: int)
+			}
+		}
 	}
 }
 
+internal var cancellationDictionary: [AnyHashable: Int] = [:]
+
 @available(macOS 12, *)
 extension Task {
-	public func cancellable(by token: AnyHashable, in storage: inout [AnyHashable: Int]) -> Self {
-		storage[token] = self.hashValue
+	/*
+	 REDUCER {
+		Task {
+			some logic here...
+		}.cancellable(someHashValue)
+	 }
+	 
+	 store.send(.someAction)
+	 store.cancel(someHashValue)
+	 */
+	public func cancellable(by token: AnyHashable) -> Self {
+		cancellationDictionary[token] = self.hashValue
 		return self
 	}
-	
-//	public func cancel(_ hash: AnyHashable) {
-//		self.cancel()
-//	}
 }
 #endif
 

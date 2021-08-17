@@ -44,7 +44,7 @@ enum Content {
 					} onCancel: {
 						print("onCancel")
 					}
-				}
+				}.cancellable(by: 101)
 			]
 		case .dec:
 			state.count -= 1

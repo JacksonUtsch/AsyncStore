@@ -21,9 +21,7 @@ struct ContentView: View {
 					viewStore.send(.delayedInc)
 				}
 				Text("Cancel").onTapGesture {
-					Task {
-						await store.cancel(by: 5)
-					}
+					store.cancel(by: 101)
 				}
 			}
 		}
