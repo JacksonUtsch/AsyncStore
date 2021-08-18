@@ -15,9 +15,6 @@ public actor Store<State: Equatable, Action> {
 	internal let reducer: (inout State, Action) -> [Task<Action, Never>]
 	internal var flights: [Int: Task<Void, Error>] = [:]
 	
-	/// A type to represent a cancelled side-effect
-	internal enum CancellationError: Error { case cancelled }
-	
 	public init<Environment>(
 		initialState: State,
 		reducer: Reducer<State, Action, Environment>,
@@ -26,23 +23,22 @@ public actor Store<State: Equatable, Action> {
 		self.state = initialState
 		self.reducer = { state, action in reducer.run(&state, action, environment) }
 	}
-	
-	private func _send(_ action: Action) async -> [Task<Action, Never>] {
-		return reducer(&state, action)
+		
+	internal func _send(_ action: Action) async {
+		for effect in reducer(&state, action) {
+			_addTask(hash: effect.hashValue) { [weak self] in
+				try Task.checkCancellation()
+				let action = await effect.value
+				try Task.checkCancellation()
+				self?.send(action)
+				return action
+			}
+		}
 	}
 	
 	public nonisolated func send(_ action: Action) {
 		Task.detached { [weak self] in
-			guard let self = self else { return }
-			for effect in await self._send(action) {
-				await self._addTask(hash: effect.hashValue) { [weak self] in
-					try Task.checkCancellation()
-					let action = await effect.value
-					try Task.checkCancellation()
-					self?.send(action)
-					return action
-				}
-			}
+			await self?._send(action)
 		}
 	}
 	

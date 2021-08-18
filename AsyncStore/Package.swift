@@ -13,11 +13,14 @@ let package = Package(
 	targets: [
 		.target(
 			name: "AsyncStore",
-			dependencies: []
+			dependencies: [
+			]
 		),
 		.testTarget(
 			name: "AsyncStoreTests",
-			dependencies: ["AsyncStore"]
+			dependencies: [
+				"AsyncStore",
+			]
 		),
 	]
 )

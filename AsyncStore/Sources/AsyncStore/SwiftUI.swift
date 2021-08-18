@@ -13,19 +13,20 @@ import Combine
 public class ViewStore<State: Equatable, Action>: ObservableObject {
 	private let store: Store<State, Action>
 	@Published public private(set) var state: State? = nil
+	private let observerID = UUID()
 	
 	public init(
 		_ store: Store<State, Action>
 	) {
 		self.store = store
-		store.insertObserver(with: 0) { newState in
+		store.insertObserver(with: observerID) { newState in
 			DispatchQueue.main.async { [weak self] in
 				self?.state = newState
 			}
 		}
 	}
 	
-	deinit { store.removeObserver(with: 0) }
+	deinit { store.removeObserver(with: observerID) }
 	
 	public func send(_ action: Action) {
 		store.send(action)

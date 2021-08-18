@@ -13,7 +13,7 @@ internal var cancellationDictionary: [AnyHashable: Int] = [:]
 @available(macOS 12, *)
 extension Task {
 	/*
-	 REDUCER {
+	 Reducer {
 		Task {
 			some logic here...
 		}.cancellable(someHashValue)
